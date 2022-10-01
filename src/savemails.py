@@ -87,7 +87,7 @@ class SaveMails:
     def backupMailsInFolder(self, idx: int, folder: str, progress: ProgressWindow):
         status, countMessagesBytesList = self.imap.select(folder)
         if status != 'OK':
-            print("Errro accessing folder: " + folder)
+            print("Error accessing folder: " + folder)
             return
         n = int(countMessagesBytesList[0])
         for i in range(1, n+1):
