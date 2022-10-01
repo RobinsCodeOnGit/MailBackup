@@ -150,7 +150,7 @@ class SaveMails:
                     header += headerBytes.decode(charset)
                 except:
                     try:
-                        header += headerBytes.decode('ascii')
+                        header += headerBytes.decode('utf-8')
                     except Exception as exp:
                         print(
                             'Failed to extract Header. Uknown encoding: ' + charset)
