@@ -6,3 +6,4 @@ share/
 Scripts/
 dist/
 build/
+__pycache__/
