@@ -12,6 +12,7 @@ from time import strftime
 from tkinter import Label, StringVar, Tk, ttk, Button
 import tkinter
 import traceback
+from turtle import width
 
 import jinja2
 
@@ -20,6 +21,7 @@ class ProgressWindow:
     def __init__(self, title: str) -> None:
         self.window = tkinter.Tk()
         self.window.title(title)
+        self.window.attributes('-topmost', True)
         self.progressBar = ttk.Progressbar(
             master=self.window, orient=tkinter.HORIZONTAL, length=300)
         self.progressBar.pack(padx=10, pady=5)
@@ -52,6 +54,14 @@ class ProgressWindow:
 
     def runGUI(self):
         print('Starting gui')
+        self.window.update()
+        height = self.window.winfo_height()
+        width = self.window.winfo_width()
+        screenHeight = self.window.winfo_screenheight()
+        screenWidth = self.window.winfo_screenwidth()
+        print(width)
+        self.window.geometry('{width}x{height}+{screenPosX}+{screenPosY}'.format(width=width, height=height,
+                             screenPosX=int(screenWidth-(width+8)), screenPosY=int(screenHeight-(height+79))))
         self.window.mainloop()
         #threading.Thread(target=lambda: self.window.mainloop()).start()
 
