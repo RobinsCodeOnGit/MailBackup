@@ -3,23 +3,21 @@ from datetime import datetime
 from email.message import Message
 import imaplib
 import email
-from email.header import decode_header
 import os
 import base64
 import json
 import threading
-from time import strftime
 from tkinter import Label, StringVar, Tk, ttk, Button
 import tkinter
+from tkinter.simpledialog import askstring
 import traceback
-from turtle import width
 
 import jinja2
 
 
 class ProgressWindow:
     def __init__(self, title: str) -> None:
-        self.window = tkinter.Tk()
+        self.window = Tk()
         self.window.title(title)
         self.window.attributes('-topmost', True)
         self.progressBar = ttk.Progressbar(
@@ -48,33 +46,23 @@ class ProgressWindow:
     def updateBar(self, message: str, percent: int):
         self.progressBar['value'] = percent
         self.messageVar.set(message)
-        print(message + " " + str(percent) + "%")
         self.window.update()
         self.window.update_idletasks()
 
     def runGUI(self):
-        print('Starting gui')
         self.window.update()
         height = self.window.winfo_height()
         width = self.window.winfo_width()
         screenHeight = self.window.winfo_screenheight()
         screenWidth = self.window.winfo_screenwidth()
-        print(width)
         self.window.geometry('{width}x{height}+{screenPosX}+{screenPosY}'.format(width=width, height=height,
                              screenPosX=int(screenWidth-(width+8)), screenPosY=int(screenHeight-(height+79))))
         self.window.mainloop()
-        #threading.Thread(target=lambda: self.window.mainloop()).start()
 
 
 class SaveMails:
     def __init__(self) -> None:
         self.resources = json.load(open('./config/resources.json'))
-        self.imap = imaplib.IMAP4_SSL(self.resources['account']['server'])
-        # authenticate
-        self.imap.login(self.resources['account']['username'], self.decode(
-            self.resources['account']['password_enc']))
-        self.folders = [x.decode().split('"/" ')[1]
-                        for x in self.imap.list()[1]]
         self.savedMails = []
 
     def createStorage(self):
@@ -119,12 +107,12 @@ class SaveMails:
                 mailFile.write(rawMail)
             self.savedMails.append({
                 "folder": folderName,
-                "fileLocation": path,
+                "fileLocation": '.' + path[len(self.backupFolder):],
                 "subject": self.subjectOf(mail),
-                "from": mail.get('from'),
-                "to": mail.get('to'),
+                "from": self.decodeHeader(header='from', mail=mail),
+                "to": self.decodeHeader('to', mail),
                 "date": email.utils.parsedate_to_datetime(mail.get('date')).strftime('%d.%m.%Y %H:%M Uhr'),
-                "hasAttachment": mail.get('content-type').startswith('multipart/mixed;')
+                "attachments": self.countAttachments(mail)
             })
             return True
         except Exception as e:
@@ -142,31 +130,34 @@ class SaveMails:
         return path
 
     def subjectOf(self, mail: Message):
-        subject = mail.get('subject')
-        if subject == None:
+        return self.decodeHeader('subject', mail)
+    
+    def decodeHeader(self, header:str, mail: Message):
+        header = mail.get(header)
+        if header == None:
             return ''
-        if type(subject) == str and not '=?' in subject:
-            return subject
+        if type(header) == str and not '=?' in header:
+            return header
         try:
-            decoded_pairs = email.header.decode_header(subject)
-            subject = ''
+            decoded_pairs = email.header.decode_header(header)
+            header = ''
             for pair in decoded_pairs:
-                subjectBytes: bytes = pair[0]
+                headerBytes: bytes = pair[0]
                 charset: str = pair[1]
                 if charset == None:
                     charset = 'utf-8'
                 try:
-                    subject += subjectBytes.decode(charset)
+                    header += headerBytes.decode(charset)
                 except:
                     try:
-                        subject += subjectBytes.decode('ascii')
+                        header += headerBytes.decode('ascii')
                     except Exception as exp:
                         print(
-                            'Failed to extract Subject. Uknown encoding: ' + charset)
+                            'Failed to extract Header. Uknown encoding: ' + charset)
                         raise (exp)
         except Exception as e:
             traceback.print_exception(e)
-        return str(subject)
+        return str(header)
 
     def clean(text, allowAdditionalCharacters=''):
         # clean text for creating a folder
@@ -186,6 +177,55 @@ class SaveMails:
         template.stream(account=self.resources['account']['username'], now=datetime.now().strftime(
             '%d.%m.%Y'), mails=self.savedMails).dump(os.path.join(self.backupFolder, 'index.html'))
 
+    def login(self):
+        if not 'password_enc' in self.resources['account'].keys() or self.resources['account']['password_enc'] == None or self.resources['account']['password_enc'] == '':
+            password = askstring('Mail Password', prompt='Enter Password:' + (' '*50), show='*')
+            self.resources['account']['password_enc'] = SaveMails.encode( password )
+            self.saveResources()
+        else:
+            password = self.decode(self.resources['account']['password_enc'])
+        self.imap = imaplib.IMAP4_SSL(self.resources['account']['server'])
+        self.imap.login(self.resources['account']['username'], password)
+        self.folders = [x.decode().split('"/" ')[1]
+                        for x in self.imap.list()[1]]
+        
+    def saveResources(self):
+        with open('./config/resources.json', 'w') as resourceFile:
+            resourceFile.write(json.dumps( self.resources, sort_keys=True, indent=4))
+            
+    def countAttachments(self, msg: Message):
+        # from https://cds.lol/tutorial/3984392-in-python,-how-can-i-count-the-number-of-files-a-sender-has-attached-to-an-email?
+        totalattachments = 0
+        firsttextattachmentseen = False
+        lastseenboundary = ''
+        alternativetextplainfound = False
+        alternativetexthtmlfound = False
+        for part in msg.walk():
+            if part.is_multipart():
+                lastseenboundary = part.get_content_type()
+                continue
+            if lastseenboundary == 'multipart/alternative':
+                #for HTML emails, the multipart/alternative part contains the HTML and its alternative text representation
+                #BUT it seems that plenty of messages add file attachments after the txt and html, so we'll have to account for that
+                if part.get_content_type() == 'text/plain' and alternativetextplainfound == False:
+                    alternativetextplainfound = True
+                    continue
+                if part.get_content_type() == 'text/html' and alternativetexthtmlfound == False:
+                    alternativetexthtmlfound = True
+                    continue
+            if (part.get_content_type() == 'text/plain') and (lastseenboundary != 'multipart/alternative'):
+                #if this is a plain text email, then the first txt attachment is the message body so we do not 
+                #count it as an attachment
+                if firsttextattachmentseen == False:
+                    firsttextattachmentseen = True
+                    continue
+                else:
+                    totalattachments += 1
+                    continue
+            # any other part we encounter we shall assume is a user added attachment
+            totalattachments += 1
+        return totalattachments
+
 
 def startBackup(parameters: tuple):
     mail: SaveMails = parameters[0]
@@ -193,11 +233,14 @@ def startBackup(parameters: tuple):
     mail.createStorage()
     progress.updateBar('Folder Structure created', 20)
     mail.backupMails(progress)
+    progress.updateBar('Creating Overview Html', 20)
     mail.createHtml()
+    progress.window.destroy()
 
 
 if __name__ == '__main__':
     mail = SaveMails()
+    mail.login()
     progressWindow = ProgressWindow('Mail Backup')
     progressWindow.addButtonWithFunction(
         'Backup Now', startBackup, (mail, progressWindow))
