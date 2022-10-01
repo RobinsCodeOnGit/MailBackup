@@ -22,7 +22,7 @@ class ProgressWindow:
         self.window.title(title)
         self.progressBar = ttk.Progressbar(
             master=self.window, orient=tkinter.HORIZONTAL, length=300)
-        self.progressBar.pack()
+        self.progressBar.pack(padx=10, pady=5)
         self.messageVar = StringVar(self.window)
         self.messageLabel = Label(self.window, textvariable=self.messageVar)
         self.messageLabel.pack()
@@ -35,7 +35,7 @@ class ProgressWindow:
         self.buttonFunctionParameters = parameters
         self.button = Button(master=self.window,
                              text=buttonText, command=lambda: self.__buttonClicked())
-        self.button.pack()
+        self.button.pack(pady=5)
 
     def __buttonClicked(self):
         if (self.button != None):
