@@ -96,6 +96,7 @@ class SaveMails:
                 self.backupMailsInFolder(idx, folder, progress)
             progress.updateBar('Creating Overview Html File', 50)
             self.createHtml()
+            self.imap.logout()
 
     def backupMailsInFolder(self, idx: int, folder: str, progress: ProgressWindow):
         status, countMessagesBytesList = self.imap.select(folder)
