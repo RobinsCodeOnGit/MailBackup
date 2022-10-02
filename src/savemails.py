@@ -68,7 +68,7 @@ class SaveMails:
     def createStorage(self):
         now = datetime.now().strftime('%Y%m%d-%H%M')
         self.backupFolder = os.path.join(
-            self.resources['storageLocation'], self.resources['account']['username'], 'backup_' + now)
+            self.resources['storageLocation'], self.currentAccount['username'], 'backup_' + now)
         if not os.path.exists(self.backupFolder):
             os.makedirs(self.backupFolder)
         self.folderLocations = []
@@ -81,8 +81,17 @@ class SaveMails:
             self.folderLocations.append(folderLocation)
 
     def backupMails(self, progress: ProgressWindow):
-        for idx, folder in enumerate(self.folders):
-            self.backupMailsInFolder(idx, folder, progress)
+        for i, account in enumerate( self.resources['accounts'] ):
+            self.currentAccount = account
+            self.login()
+            self.createStorage()
+            progress.updateBar('Folder Structure created', 20)
+            self.resources['accounts'][i]['password_enc'] = self.currentAccount['password_enc']
+            self.saveResources()
+            for idx, folder in enumerate(self.folders):
+                self.backupMailsInFolder(idx, folder, progress)
+            progress.updateBar('Creating Overview Html File', 50)
+            self.createHtml()
 
     def backupMailsInFolder(self, idx: int, folder: str, progress: ProgressWindow):
         status, countMessagesBytesList = self.imap.select(folder)
@@ -174,18 +183,17 @@ class SaveMails:
         templateEnv = jinja2.Environment(loader=templateLoader)
         TEMPLATE_FILE = "template.html"
         template = templateEnv.get_template(TEMPLATE_FILE)
-        template.stream(account=self.resources['account']['username'], now=datetime.now().strftime(
+        template.stream(account=self.currentAccount['username'], now=datetime.now().strftime(
             '%d.%m.%Y'), mails=self.savedMails).dump(os.path.join(self.backupFolder, 'index.html'))
 
     def login(self):
-        if not 'password_enc' in self.resources['account'].keys() or self.resources['account']['password_enc'] == None or self.resources['account']['password_enc'] == '':
-            password = askstring('Mail Password', prompt='Enter Password:' + (' '*50), show='*')
-            self.resources['account']['password_enc'] = SaveMails.encode( password )
-            self.saveResources()
+        if not 'password_enc' in self.currentAccount.keys() or self.currentAccount['password_enc'] == None or self.currentAccount['password_enc'] == '':
+            password = askstring('Mail Password', prompt='Enter Password for '+ self.currentAccount['username'] +':' + (' '*30), show='*')
+            self.currentAccount['password_enc'] = SaveMails.encode( password )
         else:
-            password = self.decode(self.resources['account']['password_enc'])
-        self.imap = imaplib.IMAP4_SSL(self.resources['account']['server'])
-        self.imap.login(self.resources['account']['username'], password)
+            password = self.decode(self.currentAccount['password_enc'])
+        self.imap = imaplib.IMAP4_SSL(self.currentAccount['server'])
+        self.imap.login(self.currentAccount['username'], password)
         self.folders = [x.decode().split('"/" ')[1]
                         for x in self.imap.list()[1]]
         
@@ -230,17 +238,12 @@ class SaveMails:
 def startBackup(parameters: tuple):
     mail: SaveMails = parameters[0]
     progress: ProgressWindow = parameters[1]
-    mail.createStorage()
-    progress.updateBar('Folder Structure created', 20)
     mail.backupMails(progress)
-    progress.updateBar('Creating Overview Html', 20)
-    mail.createHtml()
     progress.window.destroy()
 
 
 if __name__ == '__main__':
     mail = SaveMails()
-    mail.login()
     progressWindow = ProgressWindow('Mail Backup')
     progressWindow.addButtonWithFunction(
         'Backup Now', startBackup, (mail, progressWindow))
