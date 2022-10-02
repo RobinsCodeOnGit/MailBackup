@@ -19,6 +19,7 @@ class ProgressWindow:
     def __init__(self, title: str) -> None:
         self.window = Tk()
         self.window.title(title)
+        self.window.iconbitmap(default='./config/MailBackup.ico')
         self.window.attributes('-topmost', True)
         self.progressBar = ttk.Progressbar(
             master=self.window, orient=tkinter.HORIZONTAL, length=300)
@@ -83,7 +84,10 @@ class SaveMails:
     def backupMails(self, progress: ProgressWindow):
         for i, account in enumerate( self.resources['accounts'] ):
             self.currentAccount = account
+            progress.window.title('Mail Backup - ' + account['username'])
+            progress.updateBar('Performing Login', 0)
             self.login()
+            progress.updateBar('Performing Login', 100)
             self.createStorage()
             progress.updateBar('Folder Structure created', 20)
             self.resources['accounts'][i]['password_enc'] = self.currentAccount['password_enc']
@@ -187,15 +191,26 @@ class SaveMails:
             '%d.%m.%Y'), mails=self.savedMails).dump(os.path.join(self.backupFolder, 'index.html'))
 
     def login(self):
-        if not 'password_enc' in self.currentAccount.keys() or self.currentAccount['password_enc'] == None or self.currentAccount['password_enc'] == '':
-            password = askstring('Mail Password', prompt='Enter Password for '+ self.currentAccount['username'] +':' + (' '*30), show='*')
-            self.currentAccount['password_enc'] = SaveMails.encode( password )
-        else:
-            password = self.decode(self.currentAccount['password_enc'])
-        self.imap = imaplib.IMAP4_SSL(self.currentAccount['server'])
-        self.imap.login(self.currentAccount['username'], password)
-        self.folders = [x.decode().split('"/" ')[1]
-                        for x in self.imap.list()[1]]
+        repeat = True
+        while (repeat):
+            if not 'password_enc' in self.currentAccount.keys() or self.currentAccount['password_enc'] == None or self.currentAccount['password_enc'] == '':
+                password = None
+                while(password == None):
+                    password = askstring('Mail Password', prompt='Enter Password for '+ self.currentAccount['username'] +':' + (' '*30), show='*')
+                    print(password)
+                self.currentAccount['password_enc'] = SaveMails.encode( password )
+            else:
+                password = self.decode(self.currentAccount['password_enc'])
+            
+            try:
+                self.imap = imaplib.IMAP4_SSL(self.currentAccount['server'], port=int(self.currentAccount['port']))
+                status, somebytes = self.imap.login(self.currentAccount['username'], password)
+                if (status != 'OK'): raise Exception(status, 'Login Failed')
+                repeat = False
+                self.folders = [x.decode().split('"/" ')[1]
+                                for x in self.imap.list()[1]]
+            except Exception as e:
+                traceback.print_exception(e)
         
     def saveResources(self):
         with open('./config/resources.json', 'w') as resourceFile:
