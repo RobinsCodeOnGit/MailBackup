@@ -197,7 +197,6 @@ class SaveMails:
                 password = None
                 while(password == None):
                     password = askstring('Mail Password', prompt='Enter Password for '+ self.currentAccount['username'] +':' + (' '*30), show='*')
-                    print(password)
                 self.currentAccount['password_enc'] = SaveMails.encode( password )
             else:
                 password = self.decode(self.currentAccount['password_enc'])
