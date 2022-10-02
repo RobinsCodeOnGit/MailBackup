@@ -1,0 +1,60 @@
+<html>
+
+<head>
+    <style>
+        table {
+            border-collapse: collapse;
+        }
+
+        th {
+            background-color: #e6ffff;
+        }
+
+        th,
+        td {
+            padding: 4px;
+            text-align: left;
+            vertical-align: center;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f0f0f0;
+        }
+
+        tr:nth-child(odd) {
+            background-color: #fff;
+        }
+
+        tr>:nth-child(5) {
+            text-align: center;
+        }
+    </style>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>Inbox</title>
+</head>
+
+<body>
+    <h2>{{ account }} Inbox {{ now }}</h2>
+    <table width="99%" border="1">
+        <tr>
+            <th><b>Folder</b></th>
+            <th><b>Subject</b></th>
+            <th><b>From</b></th>
+            <th><b>To</b></th>
+            <th><b>Date</b></th>
+            <th><b>Attachment</b></th>
+        </tr>
+        {% for mail in mails %}
+        <tr>
+            <td>{{ mail.folder | safe }}</td>
+            <td><a href="{{mail.fileLocation}}">{{ mail.subject | safe }}</a></td>
+            <td>{{ mail.from | escape }}</td>
+            <td>{{ mail.to | escape }}</td>
+            <td nowrap>{{ mail.date | safe }}</td>
+            <td align="center">{% if mail.attachments == 0 %}{% else %}{{ mail.attachments }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+
+</html>
