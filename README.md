@@ -1,6 +1,10 @@
 # MailBackup
 
 A tool to backup all mails from email accounts specified in `./config/resources.json` to a local folder in eml format. An index.html for all emails is also generated for ease of use and searching later on.
+During backup progress a progressbar showing the number of folders and number of to be backed up mails are displayed using tkinter.
+
+## Keywords
+tkinter, progressBar, imaplib, mail, backup, eml-format
 
 ## Setup
 
