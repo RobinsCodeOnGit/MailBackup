@@ -134,9 +134,13 @@ class SaveMails:
             return False
 
     def filepathOf(self, mail: Message, folderLocation: str):
-        dateStr = mail.get('date')
-        date: datetime = email.utils.parsedate_to_datetime(dateStr)
-        prefix = date.strftime('%Y%m%d-%H%M_')
+        prefix = ''
+        try:
+            dateStr = mail.get('date')
+            date: datetime = email.utils.parsedate_to_datetime(dateStr)
+            prefix = date.strftime('%Y%m%d-%H%M_')
+        except:
+            prefix = '00000000-0000_'
         subject = SaveMails.clean(self.subjectOf(mail))
         path = os.path.join(folderLocation, prefix + subject + '.eml')
         while (os.path.exists(path)):

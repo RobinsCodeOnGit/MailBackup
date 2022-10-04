@@ -49,6 +49,8 @@ configPath = os.path.join(DISTPATH, 'config')
 shutil.rmtree(configPath, ignore_errors=True)
 os.makedirs(configPath)
 shutil.copyfile('./config/template.html', os.path.join(configPath, 'template.html'))
+shutil.copyfile('./config/MailBackup.ico', os.path.join(configPath, 'MailBackup.ico'))
+
 resources : dict = {
     "accounts" : [
         {
