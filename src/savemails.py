@@ -4,6 +4,7 @@ from email.message import Message
 import imaplib
 import email
 import os
+import sys
 import base64
 import json
 import threading
@@ -30,8 +31,6 @@ class ProgressWindow:
         self.button = None
 
     def addButtonWithFunction(self, buttonText: str, buttonFunction, parameters: tuple):
-        # t = threading.Thread(target=self.__buttonClicked(
-        #    buttonFunction, parameters))
         self.buttonFunction = buttonFunction
         self.buttonFunctionParameters = parameters
         self.button = Button(master=self.window,
@@ -82,7 +81,7 @@ class SaveMails:
             self.folderLocations.append(folderLocation)
 
     def backupMails(self, progress: ProgressWindow):
-        for i, account in enumerate( self.resources['accounts'] ):
+        for i, account in enumerate(self.resources['accounts']):
             self.currentAccount = account
             progress.window.title('Mail Backup - ' + account['username'])
             progress.updateBar('Performing Login', 0)
@@ -110,8 +109,16 @@ class SaveMails:
                 idx, len(self.folders), folder, i, n, str(res))
             progressPercentage = int((float(i)/float(n))*100)
             progress.updateBar(progressMessage, progressPercentage)
-            self.saveMail(
-                raw_mail[0][1], self.folderLocations[idx], folderName=folder)
+            try:
+                self.saveMail(
+                    raw_mail[0][1], self.folderLocations[idx], folderName=folder)
+            except Exception as e:
+                try:
+                    print('Failed to save mail: ' + str(i) + ' ' + self.subjectOf(email.message_from_bytes(raw_mail)) +
+                          ' in folder ' + str(idx) + ' ' + folder + ' for folderLocation: ' + self.folderLocations[idx])
+                except:
+                    pass
+                traceback.print_exception(e)
 
     def saveMail(self, rawMail: bytes, folderLocation, folderName):
         try:
@@ -119,13 +126,18 @@ class SaveMails:
             path = self.filepathOf(mail, folderLocation)
             with open(path, 'wb') as mailFile:
                 mailFile.write(rawMail)
+            date = self.dateOf(mail)
+            if (date == None):
+                date = 'Not available'
+            else:
+                date = date.strftime('%d.%m.%Y %H:%M Uhr')
             self.savedMails.append({
                 "folder": folderName,
                 "fileLocation": '.' + path[len(self.backupFolder):],
                 "subject": self.subjectOf(mail),
                 "from": self.decodeHeader(header='from', mail=mail),
                 "to": self.decodeHeader('to', mail),
-                "date": email.utils.parsedate_to_datetime(mail.get('date')).strftime('%d.%m.%Y %H:%M Uhr'),
+                "date": date,
                 "attachments": self.countAttachments(mail)
             })
             return True
@@ -135,22 +147,31 @@ class SaveMails:
 
     def filepathOf(self, mail: Message, folderLocation: str):
         prefix = ''
-        try:
-            dateStr = mail.get('date')
-            date: datetime = email.utils.parsedate_to_datetime(dateStr)
-            prefix = date.strftime('%Y%m%d-%H%M_')
-        except:
+        date = self.dateOf(mail)
+        if date == None:
             prefix = '00000000-0000_'
+        else:
+            prefix = date.strftime('%Y%m%d-%H%M_')
         subject = SaveMails.clean(self.subjectOf(mail))
         path = os.path.join(folderLocation, prefix + subject + '.eml')
         while (os.path.exists(path)):
             path = path[:-4] + '(1).eml'
         return path
 
+    def dateOf(self, mail: Message) -> (datetime | None):
+        dateStr = mail.get('date')
+        if dateStr == None:
+            return None
+        try:
+            date: datetime = email.utils.parsedate_to_datetime(dateStr)
+            return date
+        except Exception as e:
+            return None
+
     def subjectOf(self, mail: Message):
         return self.decodeHeader('subject', mail)
-    
-    def decodeHeader(self, header:str, mail: Message):
+
+    def decodeHeader(self, header: str, mail: Message):
         header = mail.get(header)
         if header == None:
             return ''
@@ -160,7 +181,7 @@ class SaveMails:
             decoded_pairs = email.header.decode_header(header)
             header = ''
             for pair in decoded_pairs:
-                headerBytes: bytes = pair[0]
+                headerBytes:(bytes|str) = pair[0]
                 charset: str = pair[1]
                 if charset == None:
                     charset = 'utf-8'
@@ -168,13 +189,16 @@ class SaveMails:
                     header += headerBytes.decode(charset)
                 except:
                     try:
-                        header += headerBytes.decode('utf-8')
+                        if type(headerBytes) == bytes:
+                            header += headerBytes.decode('utf-8')
+                        else:
+                            header += str(headerBytes)
                     except Exception as exp:
                         print(
                             'Failed to extract Header. Uknown encoding: ' + charset)
                         raise (exp)
         except Exception as e:
-            traceback.print_exception(e)
+            print("Using as header: " + str(header))
         return str(header)
 
     def clean(text, allowAdditionalCharacters=''):
@@ -200,26 +224,32 @@ class SaveMails:
         while (repeat):
             if not 'password_enc' in self.currentAccount.keys() or self.currentAccount['password_enc'] == None or self.currentAccount['password_enc'] == '':
                 password = None
-                while(password == None):
-                    password = askstring('Mail Password', prompt='Enter Password for '+ self.currentAccount['username'] +':' + (' '*30), show='*')
-                self.currentAccount['password_enc'] = SaveMails.encode( password )
+                while (password == None):
+                    password = askstring('Mail Password', prompt='Enter Password for ' +
+                                         self.currentAccount['username'] + ':' + (' '*30), show='*')
+                self.currentAccount['password_enc'] = SaveMails.encode(
+                    password)
             else:
                 password = self.decode(self.currentAccount['password_enc'])
-            
+
             try:
-                self.imap = imaplib.IMAP4_SSL(self.currentAccount['server'], port=int(self.currentAccount['port']))
-                status, somebytes = self.imap.login(self.currentAccount['username'], password)
-                if (status != 'OK'): raise Exception(status, 'Login Failed')
+                self.imap = imaplib.IMAP4_SSL(
+                    self.currentAccount['server'], port=int(self.currentAccount['port']))
+                status, somebytes = self.imap.login(
+                    self.currentAccount['username'], password)
+                if (status != 'OK'):
+                    raise Exception(status, 'Login Failed')
                 repeat = False
                 self.folders = [x.decode().split('"/" ')[1]
                                 for x in self.imap.list()[1]]
             except Exception as e:
                 traceback.print_exception(e)
-        
+
     def saveResources(self):
         with open('./config/resources.json', 'w') as resourceFile:
-            resourceFile.write(json.dumps( self.resources, sort_keys=True, indent=4))
-            
+            resourceFile.write(json.dumps(
+                self.resources, sort_keys=True, indent=4))
+
     def countAttachments(self, msg: Message):
         # from https://cds.lol/tutorial/3984392-in-python,-how-can-i-count-the-number-of-files-a-sender-has-attached-to-an-email?
         totalattachments = 0
@@ -232,8 +262,8 @@ class SaveMails:
                 lastseenboundary = part.get_content_type()
                 continue
             if lastseenboundary == 'multipart/alternative':
-                #for HTML emails, the multipart/alternative part contains the HTML and its alternative text representation
-                #BUT it seems that plenty of messages add file attachments after the txt and html, so we'll have to account for that
+                # for HTML emails, the multipart/alternative part contains the HTML and its alternative text representation
+                # BUT it seems that plenty of messages add file attachments after the txt and html, so we'll have to account for that
                 if part.get_content_type() == 'text/plain' and alternativetextplainfound == False:
                     alternativetextplainfound = True
                     continue
@@ -241,8 +271,8 @@ class SaveMails:
                     alternativetexthtmlfound = True
                     continue
             if (part.get_content_type() == 'text/plain') and (lastseenboundary != 'multipart/alternative'):
-                #if this is a plain text email, then the first txt attachment is the message body so we do not 
-                #count it as an attachment
+                # if this is a plain text email, then the first txt attachment is the message body so we do not
+                # count it as an attachment
                 if firsttextattachmentseen == False:
                     firsttextattachmentseen = True
                     continue
