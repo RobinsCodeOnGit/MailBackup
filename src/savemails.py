@@ -1,17 +1,17 @@
 
-from datetime import datetime
-from email.message import Message
-import imaplib
+import base64
 import email
+import imaplib
+import json
 import os
 import sys
-import base64
-import json
 import threading
-from tkinter import Label, StringVar, Tk, ttk, Button
 import tkinter
-from tkinter.simpledialog import askstring
 import traceback
+from datetime import datetime
+from email.message import Message
+from tkinter import Button, Label, StringVar, Tk, ttk
+from tkinter.simpledialog import askstring
 
 import jinja2
 
@@ -65,13 +65,14 @@ class SaveMails:
         self.resources = json.load(open('./config/resources.json'))
         self.savedMails = []
 
-    def createStorage(self):
+    def createStorage(self) -> None:
         now = datetime.now().strftime('%Y%m%d-%H%M')
         self.backupFolder = os.path.join(
             self.resources['storageLocation'], self.currentAccount['username'], 'backup_' + now)
         if not os.path.exists(self.backupFolder):
             os.makedirs(self.backupFolder)
         self.folderLocations = []
+        print('Folders: '+ str(self.folders))
         for folder in self.folders:
             cleanFoldername = SaveMails.clean(folder, '/\\').replace(
                 '/', os.path.sep).replace('\\', os.path.sep)
@@ -79,6 +80,7 @@ class SaveMails:
             if not os.path.exists(folderLocation):
                 os.makedirs(folderLocation)
             self.folderLocations.append(folderLocation)
+        print('Folder Locations: ' + str(self.folderLocations))
 
     def backupMails(self, progress: ProgressWindow):
         for i, account in enumerate(self.resources['accounts']):
@@ -104,6 +106,8 @@ class SaveMails:
             return
         n = int(countMessagesBytesList[0])
         for i in range(1, n+1):
+            # to add a filter for downloading only latest emails (after e.g. last backup date): https://gist.github.com/zed/9336086
+            # another interesting library: https://pypi.org/project/imap-tools/#actions-with-emails msg.obj == raw_mail
             res, raw_mail = self.imap.fetch(str(i), '(RFC822)')
             progressMessage = '({0}/{1}) Folder: {2} ({3}/{4}) - {5}'.format(
                 idx, len(self.folders), folder, i, n, str(res))
@@ -203,7 +207,9 @@ class SaveMails:
 
     def clean(text, allowAdditionalCharacters=''):
         # clean text for creating a folder
-        return "".join(c if c.isalnum() or c in '().-, =!' or c in allowAdditionalCharacters else " " for c in text)
+        if text[0] == text[-1] == '"' or text[0] == text[-1] == "'":
+            text = text[1:-1]
+        return "".join(c if c.isalnum() or c in '().-, =!' or c in allowAdditionalCharacters else "" for c in text)
 
     def encode(s: str):
         return base64.b64encode(s.encode(encoding='utf-8')).decode(encoding='utf-8')
