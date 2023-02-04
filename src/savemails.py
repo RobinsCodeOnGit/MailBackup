@@ -8,7 +8,7 @@ import sys
 import threading
 import tkinter
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.message import Message
 from tkinter import Button, Label, StringVar, Tk, ttk
 from tkinter.simpledialog import askstring
@@ -62,7 +62,7 @@ class ProgressWindow:
 
 class SaveMails:
     def __init__(self) -> None:
-        self.resources = json.load(open('./config/resources.json'))
+        self.resources:dict = json.load(open('./config/resources.json'))
         self.savedMails = []
 
     def createStorage(self) -> None:
@@ -72,7 +72,6 @@ class SaveMails:
         if not os.path.exists(self.backupFolder):
             os.makedirs(self.backupFolder)
         self.folderLocations = []
-        print('Folders: '+ str(self.folders))
         for folder in self.folders:
             cleanFoldername = SaveMails.clean(folder, '/\\').replace(
                 '/', os.path.sep).replace('\\', os.path.sep)
@@ -80,7 +79,6 @@ class SaveMails:
             if not os.path.exists(folderLocation):
                 os.makedirs(folderLocation)
             self.folderLocations.append(folderLocation)
-        print('Folder Locations: ' + str(self.folderLocations))
 
     def backupMails(self, progress: ProgressWindow):
         for i, account in enumerate(self.resources['accounts']):
@@ -92,9 +90,10 @@ class SaveMails:
             self.createStorage()
             progress.updateBar('Folder Structure created', 20)
             self.resources['accounts'][i]['password_enc'] = self.currentAccount['password_enc']
-            self.saveResources()
             for idx, folder in enumerate(self.folders):
                 self.backupMailsInFolder(idx, folder, progress)
+            self.resources['lastBackupDate'] = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            self.saveResources()
             progress.updateBar('Creating Overview Html File', 50)
             self.createHtml()
             self.imap.logout()
@@ -104,25 +103,56 @@ class SaveMails:
         if status != 'OK':
             print("Error accessing folder: " + folder)
             return
-        n = int(countMessagesBytesList[0])
-        for i in range(1, n+1):
-            # to add a filter for downloading only latest emails (after e.g. last backup date): https://gist.github.com/zed/9336086
-            # another interesting library: https://pypi.org/project/imap-tools/#actions-with-emails msg.obj == raw_mail
-            res, raw_mail = self.imap.fetch(str(i), '(RFC822)')
-            progressMessage = '({0}/{1}) Folder: {2} ({3}/{4}) - {5}'.format(
-                idx, len(self.folders), folder, i, n, str(res))
-            progressPercentage = int((float(i)/float(n))*100)
-            progress.updateBar(progressMessage, progressPercentage)
-            try:
-                self.saveMail(
-                    raw_mail[0][1], self.folderLocations[idx], folderName=folder)
-            except Exception as e:
+        if 'lastBackupDate' in self.resources.keys():
+            datestr = self.resources['lastBackupDate']
+            datestr = datetime.strptime(datestr, '%Y-%m-%d').strftime('%d-%b-%Y')
+            typ, [msgnums] = self.imap.search(None, f'(since "{datestr}")')
+            if len(msgnums.decode('utf-8')) < 1:
+                return
+            for no, i in enumerate(msgnums.decode('utf-8').split(' ')):
+                # to add a filter for downloading only latest emails (after e.g. last backup date): https://gist.github.com/zed/9336086
+                # another interesting library: https://pypi.org/project/imap-tools/#actions-with-emails msg.obj == raw_mail
                 try:
-                    print('Failed to save mail: ' + str(i) + ' ' + self.subjectOf(email.message_from_bytes(raw_mail)) +
-                          ' in folder ' + str(idx) + ' ' + folder + ' for folderLocation: ' + self.folderLocations[idx])
-                except:
-                    pass
-                traceback.print_exception(e)
+                    res, raw_mail = self.imap.fetch(str(i), '(RFC822)')
+                    progressMessage = '({0}/{1}) Folder: {2} ({3}/{4}) - {5}'.format(
+                        idx, len(self.folders), folder, no, len(msgnums), str(res)
+                    )
+                    progressPercentage = int((float(i)/float(len(msgnums)))*100)
+                    progress.updateBar(progressMessage, progressPercentage)
+                    self.saveMail(
+                        raw_mail[0][1], self.folderLocations[idx], folderName=folder)
+                except Exception as e:
+                    try:
+                        print('Failed to save mail: ' + str(i) + ' ' + self.subjectOf(email.message_from_bytes(raw_mail)) +
+                            ' in folder ' + str(idx) + ' ' + folder + ' for folderLocation: ' + self.folderLocations[idx])
+                    except:
+                        pass
+                    traceback.print_exception(e)
+        else:
+            n = int(countMessagesBytesList[0])
+            for i in range(1, n+1):
+                # to add a filter for downloading only latest emails (after e.g. last backup date): https://gist.github.com/zed/9336086
+                # another interesting library: https://pypi.org/project/imap-tools/#actions-with-emails msg.obj == raw_mail
+                try:
+                    res, raw_mail = self.imap.fetch(str(i), '(RFC822)')
+                    progressMessage = '({0}/{1}) Folder: {2} ({3}/{4}) - {5}'.format(
+                        idx, len(self.folders), folder, i, n, str(res))
+                    progressPercentage = int((float(i)/float(n))*100)
+                    progress.updateBar(progressMessage, progressPercentage)
+                    try:
+                        rawBytes = raw_mail[0][1]
+                    except:
+                        print("Couldn't access raw bytes")
+                    folderLocation = self.folderLocations[idx]
+                    self.saveMail(
+                        rawBytes, folderLocation, folderName=folder)
+                except Exception as e:
+                    try:
+                        print('Failed to save mail: ' + str(i) + ' ' + self.subjectOf(email.message_from_bytes(raw_mail)) +
+                            ' in folder ' + str(idx) + ' ' + folder + ' for folderLocation: ' + self.folderLocations[idx])
+                    except:
+                        pass
+                    traceback.print_exception(e)
 
     def saveMail(self, rawMail: bytes, folderLocation, folderName):
         try:
@@ -207,7 +237,7 @@ class SaveMails:
 
     def clean(text, allowAdditionalCharacters=''):
         # clean text for creating a folder
-        if text[0] == text[-1] == '"' or text[0] == text[-1] == "'":
+        if ' ' in text and (text[0] == text[-1] == '"' or text[0] == text[-1] == "'"):
             text = text[1:-1]
         return "".join(c if c.isalnum() or c in '().-, =!' or c in allowAdditionalCharacters else "" for c in text)
 
